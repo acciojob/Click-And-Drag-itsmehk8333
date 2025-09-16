@@ -1,4 +1,4 @@
-// ---- Robust container pan (replace previous pan code with this) ----
+// Robust container pan (attach move/up handlers on container AND document)
 (function enableContainerPan() {
   const container = document.querySelector('.items');
   if (!container) return;
@@ -12,9 +12,28 @@
     return e.pageX;
   }
 
+  function onPanMove(e) {
+    if (!isDown) return;
+    const pageX = getPageX(e);
+    const delta = pageX - startPageX;
+    container.scrollLeft = Math.max(0, scrollStart - delta);
+  }
+
+  function onPanEnd() {
+    if (!isDown) return;
+    isDown = false;
+    container.classList.remove('active');
+    document.body.classList.remove('no-select');
+
+    // remove any document-level handlers (we keep container handlers)
+    document.removeEventListener('mousemove', onPanMove);
+    document.removeEventListener('mouseup', onPanEnd);
+    document.removeEventListener('touchmove', onPanMove);
+    document.removeEventListener('touchend', onPanEnd);
+  }
+
   // Start panning when mousedown/touchstart inside container but not on an .item
   container.addEventListener('mousedown', (e) => {
-    // don't start pan if an item drag is active or the pointer is on an item element
     if (window.__draggingItem) return;
     if (e.target.closest && e.target.closest('.item')) return;
 
@@ -25,48 +44,39 @@
     container.classList.add('active');
     document.body.classList.add('no-select');
 
-    // prevent text selection or undesired native behavior
+    // Attach listeners to document (for pointer leaving container) and container (for Cypress triggers)
+    document.addEventListener('mousemove', onPanMove);
+    document.addEventListener('mouseup', onPanEnd);
+
+    // Also handle moves/up on container itself (Cypress triggers events on the element)
+    container.addEventListener('mousemove', onPanMove);
+    container.addEventListener('mouseup', onPanEnd);
+
     e.preventDefault();
   });
 
-  document.addEventListener('mousemove', (e) => {
-    if (!isDown) return;
-    const pageX = getPageX(e);
-    const delta = pageX - startPageX;
-    // subtract delta so dragging left increases scrollLeft (matches typical drag-to-scroll)
-    container.scrollLeft = Math.max(0, scrollStart - delta);
-  });
-
-  document.addEventListener('mouseup', () => {
-    if (!isDown) return;
-    isDown = false;
-    container.classList.remove('active');
-    document.body.classList.remove('no-select');
-  });
-
-  // Touch equivalents
+  // Touch start
   container.addEventListener('touchstart', (e) => {
     if (window.__draggingItem) return;
     if (e.target.closest && e.target.closest('.item')) return;
+
     isDown = true;
     startPageX = getPageX(e);
     scrollStart = container.scrollLeft;
+
     container.classList.add('active');
     document.body.classList.add('no-select');
-  }, { passive: false });
 
-  document.addEventListener('touchmove', (e) => {
-    if (!isDown) return;
+    document.addEventListener('touchmove', onPanMove, { passive: false });
+    document.addEventListener('touchend', onPanEnd);
+
+    container.addEventListener('touchmove', onPanMove, { passive: false });
+    container.addEventListener('touchend', onPanEnd);
+
     e.preventDefault();
-    const pageX = getPageX(e);
-    const delta = pageX - startPageX;
-    container.scrollLeft = Math.max(0, scrollStart - delta);
-  }, { passive: false });
-
-  document.addEventListener('touchend', () => {
-    if (!isDown) return;
-    isDown = false;
-    container.classList.remove('active');
-    document.body.classList.remove('no-select');
   });
+
+  // Ensure cleanup if mouse/touch ends outside container
+  document.addEventListener('mouseup', onPanEnd);
+  document.addEventListener('touchend', onPanEnd);
 })();
